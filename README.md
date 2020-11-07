@@ -1,8 +1,7 @@
 # datatools
 A suite of tools for data processing, plotting, and exploration
 
-**gps_tools.py**
-
+**gps_tools.py** - Import GAMIT/GLOBK post-process GNSS station positions to python. Specifically for glaciological applications using the OnIce class that will preform coordinate transformations to along-flow/across-flow directions, calculate ice velocities, etc. 
 
 **diurnal.py** - Find minimuma and maxima extrema values for diurnally varying timeseries data.
 Features:
