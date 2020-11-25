@@ -17,7 +17,28 @@ import matplotlib.dates as dates
 import matplotlib.units as munits
 
 # Useful decorator functions
+def dhrs_to_timedelta(dhrs):
+    """convert decimal hours to pandas timestamp
 
+    Args:
+        dhrs (float): decimal hours
+
+    Returns:
+        [pd.Timedelta]: num hours
+    """
+    return pd.Timedelta(hours=dhrs)
+
+def dhrs_to_timestamp(data):
+    """convert a series of decimal hours to timestamps (req. date index)
+
+    Args:
+        data (series): series with a DateTimeIndex and float of decimal
+        hours
+
+    Returns:
+        [series]: same index as data but values as timestamps
+    """
+    return data.index + data.apply(dhrs_to_timedelta)
 
 def timer(func):
     """Print the runtime of the decorated function"""
@@ -143,12 +164,26 @@ class DiurnalExtrema(object):
         if self.generate_figure:
             self.plot()
 
-    def decimal_hours(self, which="max"):
-        """timestamp indexed extrema time pick in decimal hours (0-24)"""
+    def decimal_hours(self, which="max", check_before=12):
+        """timestamp indexed extrema time pick in decimal hours (0-24)."""
         decimal_hrs = timestamp_to_decimal_hours(self.df[which+"_time"].dt)
         decimal_hrs.index = decimal_hrs.index.to_timestamp()
-        return decimal_hrs
+        # check and correct for next-day extrema picks
+        return self.check_decimal_hour_calc(decimal_hrs,which,check_before)
 
+    def check_decimal_hour_calc(self, decimal_hours, which, check_before):
+        early_picks = decimal_hours[decimal_hours < check_before]
+        if len(early_picks) != 0:
+            for idx, hrs in early_picks.iteritems():
+                true_time = self.df.loc[idx.to_period('D'),which+'_time']
+                time_diff = true_time-idx
+                hrs_new = (time_diff.days * 24 ) + (time_diff.seconds/(60*60))
+                if hrs_new != hrs:
+                    decimal_hours.loc[idx] = hrs_new
+            
+        return decimal_hours
+        
+        
     def extrema_index(self, which="max"):
         """ Ex: self.extrema_series("min")
             Default: self.extrema_series()
@@ -168,7 +203,9 @@ class DiurnalExtrema(object):
         pass
 
     def amplitude(self):
-        return self.df['max_val']-self.df['min_val']
+        amp = self.df['max_val']-self.df['min_val']
+        amp.index = amp.index.to_timestamp()
+        return amp
 
     def find_diurnal_extrema(self):
         for day in self.timeseries.index.to_period('D').unique():
@@ -224,7 +261,8 @@ class DiurnalExtrema(object):
     def change_extrema_picks(self,
                              day,
                              which: str,
-                             new_extrema=None,
+                             new_extrema_value=None,
+                             new_extrema_time=None,
                              find_between=False,
                              verbose=False):
         """Change extrema picked by find_diurnal_extrema
@@ -255,8 +293,8 @@ class DiurnalExtrema(object):
             t0, t1 = extrema_slice(day, find_between)
             value, time = self.get_extrema(self.timeseries[t0:t1], which)
         else:
-            value, time = new_extrema if isinstance(
-                new_extrema, tuple) else None, None
+            value = new_extrema_value
+            time = new_extrema_time
         # elif isinstance(new_extrema, str):
         #     if new_extrema == 'None':
         #         value, time = (None, None)
@@ -364,8 +402,8 @@ class DiurnalExtrema(object):
             self.plot(generate_figure=True)
         else:
             ax.plot(self.timeseries)
-            ax.plot(self.extrema_index(), 'o', **kwargs)
-            ax.plot(self.extrema_index(which="min"), 'o', **kwargs)
+            ax.plot(self.extrema_index(), '.', **kwargs)
+            ax.plot(self.extrema_index(which="min"), '.', **kwargs)
         pass
 
 
