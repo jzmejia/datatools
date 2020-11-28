@@ -17,6 +17,8 @@ import matplotlib.dates as dates
 import matplotlib.units as munits
 
 # Useful decorator functions
+
+
 def dhrs_to_timedelta(dhrs):
     """convert decimal hours to pandas timestamp
 
@@ -27,6 +29,7 @@ def dhrs_to_timedelta(dhrs):
         [pd.Timedelta]: num hours
     """
     return pd.Timedelta(hours=dhrs)
+
 
 def dhrs_to_timestamp(data):
     """convert a series of decimal hours to timestamps (req. date index)
@@ -39,6 +42,7 @@ def dhrs_to_timestamp(data):
         [series]: same index as data but values as timestamps
     """
     return data.index + data.apply(dhrs_to_timedelta)
+
 
 def timer(func):
     """Print the runtime of the decorated function"""
@@ -133,7 +137,24 @@ class DiurnalExtrema(object):
     Timeseries with diurnally varying vals(1 max and 1 min per 24-hrs)
 
     Arguments:
-        object {[type]} -- [description]
+        timeseries {pd.Series[DatetimeIndex, float64]}: Timeseries data.
+
+        minfirst [bool]
+            Defaults to True.
+        maxnextday[bool]
+            Defaults to True.
+        predictTiming [bool]
+            Defaults to False.
+        window [Tuple, Int] : timeperiod to use when predicting timing.
+            Defaults to 4.
+        threshold --not working yet (deletes extrema picks with a diurnal
+            amplitude below )
+            Defaults to None.
+        generate_figure
+            Defaults to False.
+        stn
+            Defaults to None.
+
     """
 
     def __init__(self,
@@ -166,24 +187,25 @@ class DiurnalExtrema(object):
 
     def decimal_hours(self, which="max", check_before=12):
         """timestamp indexed extrema time pick in decimal hours (0-24)."""
-        decimal_hrs = timestamp_to_decimal_hours(self.df[which+"_time"].dt)
-        decimal_hrs.index = decimal_hrs.index.to_timestamp()
+        decimal_hrs = (self.df[which+'_time'] - self.df.index
+                       ).dt.total_seconds()/(60*60)
+        decimal_hrs = decimal_hrs.rename("hrs")
         # check and correct for next-day extrema picks
-        return self.check_decimal_hour_calc(decimal_hrs,which,check_before)
 
-    def check_decimal_hour_calc(self, decimal_hours, which, check_before):
-        early_picks = decimal_hours[decimal_hours < check_before]
-        if len(early_picks) != 0:
-            for idx, hrs in early_picks.iteritems():
-                true_time = self.df.loc[idx.to_period('D'),which+'_time']
-                time_diff = true_time-idx
-                hrs_new = (time_diff.days * 24 ) + (time_diff.seconds/(60*60))
-                if hrs_new != hrs:
-                    decimal_hours.loc[idx] = hrs_new
-            
-        return decimal_hours
-        
-        
+        return decimal_hrs
+
+    # def check_decimal_hour_calc(self, decimal_hours, which, check_before):
+    #     early_picks = decimal_hours[decimal_hours < check_before]
+    #     if len(early_picks) != 0:
+    #         for idx, hrs in early_picks.iteritems():
+    #             true_time = self.df.loc[idx.to_period('D'), which+'_time']
+    #             time_diff = true_time-idx
+    #             hrs_new = (time_diff.days * 24) + (time_diff.seconds/(60*60))
+    #             if hrs_new != hrs:
+    #                 decimal_hours.loc[idx] = hrs_new
+
+    #     return decimal_hours
+
     def extrema_index(self, which="max"):
         """ Ex: self.extrema_series("min")
             Default: self.extrema_series()
@@ -241,7 +263,7 @@ class DiurnalExtrema(object):
             # check max value is larger than min
             if maxVal and minVal and minVal > maxVal:
                 continue
-            self.diurnal_vals.append({'Date': day,
+            self.diurnal_vals.append({'Date': day.to_timestamp(),
                                       'min_val': minVal,
                                       'min_time': minTime,
                                       'max_val': maxVal,
@@ -251,6 +273,21 @@ class DiurnalExtrema(object):
         self.apply_threshold()
 
         return self.df
+
+    def multi_indexed(self):
+        self.df['min_hrs'] = (self.df.min_time
+                              - self.df.index).dt.total_seconds()/(60*60)
+        self.df['max_hrs'] = (self.df.max_time
+                              - self.df.index).dt.total_seconds()/(60*60)
+        df = self.df[['min_val', 'min_time', 'min_hrs',
+                      'max_val', 'max_time', 'max_hrs']]
+        col_labels = [np.array(['minima', 'minima', 'minima',
+                                'maxima', 'maxima', 'maxima']),
+                      np.array(['value', 'time', 'hrs',
+                                'value', 'time', 'hrs'])]
+        self.multi = pd.DataFrame(
+            df.values, index=self.df.index, columns=col_labels)
+        return self.multi
 
     def apply_threshold(self):
         if self.threshold is not None:
@@ -265,32 +302,32 @@ class DiurnalExtrema(object):
                              new_extrema_time=None,
                              find_between=False,
                              verbose=False):
-        """Change extrema picked by find_diurnal_extrema
-
+        """Change extrema picked by find_diurnal_extrema.x
         Args:
-            day (Union[str, pd.Period, pd.PeriodIndex]): extrema index
+            day (Union[str, pd.Period, pd.DatetimeIndex]): extrema index
             new_extrema (tuple or str): (extrema value, extrema time)
                 or none
             which (str): which extrema to change
                 options = 'min', 'max', 'both'
-
-
+            find_between (tuple, floats or ints): find extrema value 
+                between first and last entry of tuple (format, hours after
+                index)
         """
 
         if hasattr(self, 'diurnal_extrema_picks') is False:
             self.diurnal_extrema_picks = self.df
 
         check_input(which, 'min', 'max', 'both')
-        idx = pd.Period(day)
+        idx = pd.Timestamp(day)
 
         # check if index is in df already if not you are adding not changing
-        if isinstance(self.df.index, pd.PeriodIndex) and idx not in self.df.index:
+        if isinstance(self.df.index, pd.DatetimeIndex) and idx not in self.df.index:
             raise ValueError(f'date={day} not found in dataframe index')
 
         extrema = ['min', 'max'] if which == 'both' else [which]
 
         if find_between:
-            t0, t1 = extrema_slice(day, find_between)
+            t0, t1 = add_hours(day, find_between)
             value, time = self.get_extrema(self.timeseries[t0:t1], which)
         else:
             value = new_extrema_value
@@ -430,6 +467,21 @@ def mean_occurance(occurance_list: list) -> float:
 
 def get_max(ts: pd.Series) -> tuple:
     return ts.max(), ts.idxmax()
+
+
+def add_hours(day, hours):
+    """add number of hours in a tuple to day
+
+    Args:
+        day (str): [description]
+        hours (Tuple of float or ints): number of hours to add to day
+
+    Returns:
+        [tuple(pd.Timestamp)]: timestamps specified by hours
+    """
+    return tuple(map(lambda hrs: pd.Timestamp(day)
+                     + pd.Timedelta(hours=hrs),
+                     hours))
 
 
 def get_min(ts: pd.Series) -> tuple:
@@ -620,3 +672,15 @@ def make_end_of_day(timestamp: pd.Timestamp) -> pd.Timestamp:
 def timestamp_to_decimal_hours(timestamp):
     decimal = ((timestamp.minute * 60)+timestamp.second)/(60*60)
     return timestamp.hour + decimal
+
+
+class Lags(object):
+    def __init__(self, extrema_dfs, keys, key_label):
+        self.dfs = extrema_dfs
+        self.keys = keys
+        self.key_label = key_label
+        self.midx = self.concat_midx()
+
+    def merge_midx(self):
+        mdf = pd.concat(self.dfs, keys=self.keys, names=self.key_label)
+        return mdf.swaplevel(0, 1, axis=0).sort_index(axis=0, level=0)
