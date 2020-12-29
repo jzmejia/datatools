@@ -19,6 +19,11 @@ import matplotlib.units as munits
 # Useful decorator functions
 
 
+def lag_df(midx, extrema='maxima', lag_from='ablation'):
+    df = midx.xs((extrema, 'hrs'), axis=1).unstack()
+    return df.apply(lambda x: x - df[lag_from]).drop(columns=[lag_from])
+
+
 def dhrs_to_timedelta(dhrs):
     """convert decimal hours to pandas timestamp
 
@@ -281,12 +286,18 @@ class DiurnalExtrema(object):
                               - self.df.index).dt.total_seconds()/(60*60)
         df = self.df[['min_val', 'min_time', 'min_hrs',
                       'max_val', 'max_time', 'max_hrs']]
+
         col_labels = [np.array(['minima', 'minima', 'minima',
                                 'maxima', 'maxima', 'maxima']),
                       np.array(['value', 'time', 'hrs',
                                 'value', 'time', 'hrs'])]
         self.multi = pd.DataFrame(
             df.values, index=self.df.index, columns=col_labels)
+        self.multi = self.multi.astype(dtype={('minima', 'value'): float,
+                                              ('minima', 'hrs'): float,
+                                              ('maxima', 'value'): float,
+                                              ('maxima', 'hrs'): float
+                                              })
         return self.multi
 
     def apply_threshold(self):

@@ -60,3 +60,8 @@ def add_in_quadrature(*num):
     for n in num:
         total += n ** 2
     return np.sqrt(total)
+
+
+def DatetimeIndex_to_doy(idx):
+    """Convert datetime index to decimal day of year."""
+    return idx.dayofyear + idx.hour/24 + idx.minute/(60*24) + idx.second/(60*60*24)

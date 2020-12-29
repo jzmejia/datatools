@@ -8,6 +8,7 @@ from typing import List, Tuple, Optional, Union, Any
 
 import pandas as pd
 import numpy as np
+from random import randint
 import matplotlib.pyplot as plt
 
 
@@ -32,7 +33,8 @@ station_names = (
     ('USF7', 'RADI'),
     ('USF8', 'MARS'),
     ('USFN', 'MARS'),
-    ('USFK', 'ROCK')
+    ('USFK', 'ROCK'),
+    ('USFS', 'SBPI')
 )
 
 EGM2008 = {
@@ -260,7 +262,8 @@ class OnIce:
         try:
             if self.stn == 'LMID':
                 self.data = self.data.drop(
-                    index=self.data['2018-3-23 01:30':'2018-3-25'].index)
+                    index=self.data[pd.Timestamp('2018-3-23 01:30'):
+                                    pd.Timestamp('2018-3-25 23:59')].index)
         except:
             pass
         # * Change assigning attrs from explicit to implicit using a dic maybe
@@ -363,6 +366,13 @@ class OnIce:
         ax[2].set_ylabel('Height (m)')
         pass
 
+    def plot(self, **kwargs):
+        plt.figure()
+        plt.plot(self.xflow, '.', **kwargs)
+        plt.plot(c_rolling(self.xflow, '6H',
+                           min_periods=self.samples_in_timespan('2H')))
+        pass
+
     def drop_positions(self, droplist: list, apply_to_instance=False):
         dropDF = _subset_from_windows(self.data, droplist)
         if apply_to_instance:
@@ -440,7 +450,8 @@ class OnIce:
             detrended (series) : linearly detrended timeseries
         """
         data = self.data if from_dataframe is None else from_dataframe
-        df = clip_to_window(data, window, col_name=['doy', component])
+        df = clip_to_window(data, window, col_name=['doy', component]
+                            ).dropna(how='any')
         # TODO: change to use numpy's Polynomial.polyfit()
         pfit = np.polyfit(df['doy'], df[component], 1)
         detrended = data[component] - pfit[1] - pfit[0] * data['doy']
@@ -873,7 +884,8 @@ def normalize_gps_data(data1, data2, norm_val):
 
 def infer_sampling(df):
     """inferred sampling rate in seconds"""
-    start, end = random_index_for_slice(df, 1000)
+    num_samples = 1000 if len(df) > 1000 else randint(4, len(df)-2)
+    start, end = random_index_for_slice(df, num_samples)
     lst = (df.index[start+1:end+1]-df.index[start:end]).seconds.to_list()
     return max(set(lst), key=lst.count)
 
@@ -884,7 +896,6 @@ def random_index_for_slice(df, length):
         raise ValueError(
             f'length {length} not valid for input data\n'
             'length must be: 2 < length < (len(df)-2)')
-    from random import randint
     start = randint(2, slice_in_range - length)
     return start, start+length
 
