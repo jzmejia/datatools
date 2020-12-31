@@ -1,5 +1,14 @@
 #!/user/bin/env python
 
+"""
+    gpstools.py
+
+    Created by: JZMejia
+
+
+    """
+
+
 from math import atan, sin, cos, sqrt
 from datetime import timedelta
 from pathlib import PurePath, Path
@@ -22,59 +31,35 @@ WindowList = List[WindowTypes]
 
 
 # Dictionaries
+# fill dics with station sepcific information
+# station_names, (tuple(str, str))
+# optional - for convenience
+
 station_names = (
+    # ('receiver code (4 characters)','location code (4 chars')
     ('USF1', 'LMID'),
-    ('USF2', 'JEME'),
-    ('USFL', 'JEME'),
-    ('USF3', 'JNIH'),
-    ('USF4', 'EORM'),
-    ('USF5', 'CMID'),
-    ('USF6', 'HMID'),
-    ('USF7', 'RADI'),
-    ('USF8', 'MARS'),
-    ('USFN', 'MARS'),
     ('USFK', 'ROCK'),
     ('USFS', 'SBPI')
 )
 
 EGM2008 = {
+    # station locationi code: EGM2008 elevation (m)
     'lmid': 29.0059,
-    'jeme': 28.9984,
-    'jnih': 28.9736,
-    'cmid': 29.3225,
-    'sbpi': 29.3352,
-    'eorm': 29.4811,
-    'hmid': 29.2759,
-    'radi': 29.4067,
-    'mars': 29.2258,
     'kaga': 28.3183,
     'rock': 27.1274
 }
 EGM96 = {
+    # station location code: EGM96 elevation (m)
     'lmid': 29.2909,
-    'jeme': 29.2815,
-    'jnih': 29.2555,
-    'cmid': 29.6720,
-    'sbpi': 29.6949,
-    'eorm': 29.8696,
-    'hmid': 29.6407,
-    'radi': 29.7915,
-    'mars': 29.5963,
     'kaga': 29.0784,
     'rock': 27.6441
 }
 
 
-# background velocities for stations determined
-# using constant background motion
-# lmid ['2018-05-22':'2018-05-26']
-# jeme ['2018-5-21':'2018-05-26']
-# jnin ['2018-05-21':'2018-5-26']
+# background velocities for stations - optional used with onice stations
 background_velocities_mpd = (
+    # (station location code, background velocity in meters per day)
     ('LMID', 0.244),
-    ('JEME', 0.240),
-    ('JNIH', 0.258),
-    ('RADI', 0.118)
 )
 
 
@@ -85,9 +70,6 @@ _directions = (
     ('x', 'xflow'),
     ('t', 'xtran'),
 )
-
-# Station Info -- TEMP
-# Rock Station Po
 
 
 class BaseStn:
@@ -152,6 +134,9 @@ class BaseStn:
         return 'Base Station '+self.name
 
 
+# define base stations used in deployment
+# (enables GPS elevation calculations)
+# e.g.
 rock = BaseStn('ROCK',
                site_pos=(1412215.2584, -1711212.5767, 5960386.7316),
                geod_pos=(69.708219352, 309.531891746, 594.5942))
@@ -167,6 +152,7 @@ defined_base_stations = {
 
 # dictionary of antenna adjustments
 # adjustment (positive is raising the antenna, unit meters)
+# example
 antenna_adjustments = {
     'LMID': {
         'date': pd.Timestamp('2018-07-07 13:28:00'),
@@ -595,96 +581,6 @@ class OnIce:
         CODEYY = self.stn.upper()+str(self.year)[2:]+'_'
         return CODEYY+DAT.upper()+'_'+FLAG.upper()+ext
 
-    def calc_NEUXTHvel(self,
-                       calc_only='x',
-                       seperation_window=2,
-                       averaging_period=3,
-                       robust=None):
-        """
-        adapted from Surui's script, default naming remanes
-
-        only_calc_XT = None or 0 (calculate NEUXT)
-                                = 1 (True) only calculate XT
-        Function to calculate velocity in the NEU and XT directions
-        returns velocity in m/d
-        calculates vel every 3 minutes using two 3-min periods seperated
-                by every 2 hours
-        default values:
-        seperation_widow = 2 (hours)
-        averaging_period = 3 (min)
-
-        Notes
-        mt - % of the day of 3 minutes
-        dt - % of the day for seperation window
-        vt - array of times(gps)
-
-        """
-        print("method is deprecated, use method: calc_velocity")
-        # if seperation_window == None:
-        #     seperation_window = 2
-        # if averaging_period == None:
-        #     averaging_period = 3
-        # sec_in_period = int((averaging_period * 60) / 2)
-        # min_in_window = seperation_window * 60
-
-        # mt = np.timedelta64(sec_in_period, 's')
-        # dt = np.timedelta64(seperation_window, 'h')
-
-        # # fraction of a day
-        # dt2 = 0.000347 * 2.0 * min_in_window
-        # # if robust == None:
-        # timevec = np.arange(self.date[0] + dt,
-        #                     self.date[-1] - dt
-        #                     + timedelta(seconds=0.1), mt*2)
-        # # else:
-        # # timevec = self.date
-        # tVNEU0 = np.empty(0)
-        # import time
-        # t = time.time()
-        # for j in range(0, len(timevec)):
-        #     tj0 = timevec[j] - dt
-        #     tj1 = timevec[j] + dt
-        #     sID00 = np.where(((self.date - tj0) >= (-1 * mt))
-        #                      & ((self.date - tj0) < mt))[0]
-        #     sID01 = np.where(((self.date - tj1) >= (-1 * mt))
-        #                      & ((self.date - tj1) < mt))[0]
-        #     if ((len(sID00) > 3) & (len(sID01) > 3)):
-        #         if calc_only == 'x':
-        #             VXj = (np.median(self.xflow[sID01])
-        #                    - np.median(self.xflow[sID00])) / (2.0 * dt2)
-        #             tVNEU0 = np.append(tVNEU0, [timevec[j], VXj])
-        #             num_cols = int(2)
-        #             column_names = ['Date', 'X_vel']
-        #         else:
-        #             VNj = (np.median(self.dnorth[sID01])
-        #                    - np.median(self.dnorth[sID00])) / (2.0 * dt2)
-        #             VEj = (np.median(self.deast[sID01])
-        #                    - np.median(self.deast[sID00])) / (2.0 * dt2)
-        #             VUj = (np.median(self.z[sID01])
-        #                    - np.median(self.z[sID00])) / (2.0 * dt2)
-        #             VXj = (np.median(self.xflow[sID01])
-        #                    - np.median(self.xflow[sID00])) / (2.0 * dt2)
-        #             VTj = (np.median(self.xtran[sID01])
-        #                    - np.median(self.xtran[sID00])) / (2.0 * dt2)
-        #             VHj = (np.median(self.dist_from_basestn[sID01])
-        #                    - np.median(self.dist_from_basestn[sID00])) / (2.0 * dt2)
-
-        #             tVNEU0 = np.append(tVNEU0,
-        #                                [timevec[j], VNj, VEj, VUj, VXj, VTj, VHj])
-        #             num_cols = int(7)
-        #             column_names = ['Date', 'N_vel', 'E_vel', 'U_vel',
-        #                             'X_vel', 'T_vel', 'H_vel']
-        #     else:
-        #         continue
-        # a = int(len(tVNEU0) / num_cols)
-        # tVNEU = tVNEU0.reshape(a, num_cols)
-        # vel_data = pd.DataFrame(tVNEU, columns=column_names)
-        # vel_data = vel_data.set_index(['Date'])
-        # elapsed = time.time() - t
-        # print(f'Time Elapsed: {elapsed:.1f} seconds')
-        # return vel_data
-        pass
-
 
 # FUNCTIONS
 
@@ -770,39 +666,6 @@ def load_NEUXTvel(file):
                      dtype={'N_vel': np.float64, 'E_vel': np.float64,
                             'U_vel': np.float64, 'X_vel': np.float64,
                             'T_vel': np.float64})
-    df.tz_localize('UTC')
-    return df
-
-
-def loadAndrewsNEU(file):
-    col_names = ['station', 'doy', 'deast', 'dnorth', 'dheight',
-                 'deast_err', 'dnorth_err', 'dheight_err', 'rms',
-                 'DD', 'atm', 'datm', 'rho_ua', 'numbBF', 'NFbias']
-    df = pd.read_csv(file, index_col=1, parse_dates=True, names=col_names,
-                     dtype=np.float64)
-    df.drop(columns='station', inplace=True)
-    return df
-
-
-def loadAndrewsVel(file):
-    col_names = ['doy', 'xvel']
-    df = pd.read_csv(file, index_col=0, parse_dates=True, names=col_names,
-                     dtype=np.float64)
-    return df
-
-
-def loadNEUwerrs(file):
-    col_names = ['doy', 'dnorth', 'dnorth_err', 'deast',
-                 'deast_err', 'dheight', 'dheight_err', 'rms',
-                 'dd', 'bf', 'err_code']
-    df = pd.read_csv(file, index_col=0, parse_dates=True, names=col_names,
-                     dtype={'index': '<M8[ns]', 'doy': np.float64,
-                            'dnorth_err': np.float64, 'deast': np.float64,
-                            'deast_err': np.float64, 'dheight': np.float64,
-                            'dheight_err': np.float64, 'rms': np.float64,
-                            'dd': np.int64, 'bf': np.int64, 'err_code': np.int64},
-                     na_values='  nan')
-    df.drop(columns='err_code', inplace=True)
     df.tz_localize('UTC')
     return df
 
@@ -999,170 +862,3 @@ def vel_equ(df0: pd.DataFrame, df1: pd.DataFrame, col_name: str, dt: float):
         vel_mpd (float): velocity mpd in the col_name assocaited direction
     """
     return (df1[col_name].median() - df0[col_name].median()) / dt
-
-# Code in progress
-
-
-def clean_velocity(df, file):
-    if 'LMID17' in file:
-        drop_list = ['2017-07-26 00:30:00', '2017-07-25 20:27',
-                     '2017-07-25 20:30', '2017-07-24 07:51',
-                     '2017-07-24 07:54', '2017-07-24 08:18']
-        idxDrop = df[df['X_vel'] < 0.062].index
-        for val in drop_list:
-            idxDrop = idxDrop.append(df[df.index == val].index)
-        tmp = df.X_vel['2017-07-28':'2017-08-06']
-        idxDrop = idxDrop.append(tmp[0.472 < tmp].index)
-        tmp = df.X_vel['2017-08-09':]
-        idxDrop = idxDrop.append(tmp[0.488 < tmp].index)
-        tmp = df.X_vel['2017-07-29']
-        idxDrop = idxDrop.append(tmp[tmp < 0.16].index)
-    elif 'MARS17' in file:
-        idxDrop = df[0.35 < df.X_vel].index
-        idxDrop = idxDrop.append(df[df.X_vel < 0].index)
-    elif 'EORM17' in file:
-        idxDrop = df[0.35 < df.X_vel].index
-        idxDrop = idxDrop.append(df[df.X_vel < 0].index)
-    elif 'JNIH17' in file:
-        drop_list = ['2017-07-25 20:27:00', '2017-07-26 00:27',
-                     '2017-07-26 05:57']
-        idxDrop = df[df.X_vel < 0.047].index
-        for val in drop_list:
-            idxDrop = idxDrop.append(df[df.index == val].index)
-    elif 'LMID18' in file:
-        drop_list = ['2018-07-19 01:21:30', '2018-09-29 04:27:30',
-                     '2018-08-18 05:57', '2018-08-18 18:33']
-        idxDrop = df[df.X_vel < 0.140].index
-        for val in drop_list:
-            idxDrop = idxDrop.append(df[df.index == val].index)
-        tmp = df.X_vel['2018-08-04 00:00':'2018-08-04 01:15']
-        idxDrop = idxDrop.append(tmp.index)
-        # tmp = df.X_vel['2018-07-27':]
-        # idxDrop = idxDrop.append(tmp[0.6 < tmp].index)
-        tmp = df.X_vel[:'2018-07-12']
-        tmp = tmp.append(df.X_vel['2018-07-18'])
-        idxDrop = idxDrop.append(tmp[0.5 < tmp].index)
-        tmp = df.X_vel['2018-07-20']
-        idxDrop = idxDrop.append(tmp[0.4 < tmp].index)
-        # tmp = df.X_vel['2018-07-27':'2018-07-29']
-        # idxDrop = idxDrop.append(tmp.index)
-        # tmp = df.X_vel['2018-07-26 12:00:00':'2018-07-29']
-        # idxDrop = idxDrop.append(tmp[0.32 < tmp].index)
-        tmp = df.X_vel['2018-07-15':'2018-07-25']
-        idxDrop = idxDrop.append(tmp[tmp < 0.207].index)
-        tmp = df.X_vel['2018-08-22':]
-        idxDrop = idxDrop.append(tmp[0.35 < tmp].index)
-    elif 'JEME18' in file:
-        drop_list = ['2018-07-24 07:50:00', '2018-06-28 22:58:30']
-        idxDrop = df[df.X_vel < 0.1].index
-        for val in drop_list:
-            idxDrop = idxDrop.append(df[df.index == val].index)
-        tmp = df.X_vel[:'2018-05-20']
-        tmp = tmp.append(df.X_vel['2018-07-18':'2018-07-20'])
-        idxDrop = idxDrop.append(tmp.index)
-        tmp = df.X_vel[:'2018-06-18']
-        idxDrop = idxDrop.append(tmp[0.47 < tmp].index)
-        tmp = df.X_vel['2018-06-22':'2018-06-25']
-        idxDrop = idxDrop.append(tmp[0.5 < tmp].index)
-    elif 'CMID18' in file:
-        idxDrop = df[df.X_vel <= 0].index
-        idxDrop = idxDrop.append(df[0.38 < df.X_vel].index)
-    elif 'RADI18' in file:
-        idxDrop = df[df.X_vel <= 0].index
-        idxDrop = idxDrop.append(df[0.3 < df.X_vel].index)
-        idxDrop = idxDrop.append(df['2018-05-31'].index)
-        idxDrop = idxDrop.append(df['2018-06-5'].index)
-        idxDrop = idxDrop.append(df['2018-05-6'].index)
-    elif 'JNIH18' in file:
-        idxDrop = df.X_vel['2018-7-12'].index
-        tmp = df.X_vel['2018-4-23 7:00':'2018-4-23 7:30']
-        tmp = tmp.append(df.X_vel['2018-5-27 5:30':'2018-5-27 12:00'])
-        tmp = tmp.append(df.X_vel['2018-6-10 21:00':'2018-6-10 23:30'])
-        tmp = tmp.append(df.X_vel['2018-6-29 12:00':'2018-6-29 17:00'])
-        tmp = tmp.append(df.X_vel['2018-3-27 21:00':'2018-3-27 23:10'])
-        tmp = tmp.append(df.X_vel['2018-3-11 4:30':'2018-3-11 5:00'])
-        idxDrop = idxDrop.append(tmp.index)
-        tmp2 = df.X_vel['2018-3-18':'2018-3-27']
-        idxDrop = idxDrop.append(tmp2[tmp2 < 0.175].index)
-        idxDrop = idxDrop.append(df[df.X_vel <= 0].index)
-        idxDrop = idxDrop.append(df[df.X_vel > 0.7].index)
-    else:
-        idxDrop = filter_zero(df)
-    df.drop(idxDrop, inplace=True)
-    return df
-
-
-class station:
-    """
-    data and information for a single gps station
-
-    attributes:
-        station.name
-        station.id
-        station.
-        station.environment
-            rock - mounted somewhere on the earth's crust
-            ice - mounted on moving ice
-            roving - not mounted
-        station.adjustment
-        station.date_removed
-    """
-
-    def __init__(self):
-        self.temp = 'temp'
-
-
-class velocity:
-    """
-
-
-
-    """
-
-    def __init__(self, file: str):
-        # load velocity data into pd.Dataframe
-        self.df = load_NEUXTvel(file)
-        # define velocity components
-        self.along_flow = self.df.X_vel
-        self.transverse_flow = self.df.T_vel
-        self.northing = self.df.N_vel
-        self.easting = self.df.E_vel
-        self.vertical = self.df.U_vel
-        self.stn_ID, self.stn = get_station_name(file)
-
-    def __str__(self):
-        return print(f'NEUXT calculated velocities for station')
-
-    def rolling_smooth(self, window=6, num_periods=None):
-        """
-        smooth velocity data with a rolling window average filter
-
-        Parameters
-        =========
-
-        Returns
-        =======
-
-        Usage
-        =====
-        from gpstools import velocity
-        stn1 = velocity('./'STN118_VEL_NEUXT.csv')
-        figure()
-        plot(stn1.x.rolling_smooth())
-        plot(stn1.x.rolling_smooth(window=3,num_periods=24),'.')
-        title('Compare 6 & 3 hr smoothing for stn1 along flow ice vel')
-
-        """
-        # win = str(window)+'H'
-        # t_shift = window/2
-        # if num_periods:
-        #     num = num_periods
-        # else:
-        #     num = window*4
-
-        pass
-
-
-# if __name__ == "__main__":
-#     import sys
-#     fib(int(sys.argv[1]))
