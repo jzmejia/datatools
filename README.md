@@ -14,7 +14,7 @@ Features:
   - Adjust incoming or reflected solar radiation data for repeated shadowing of sensors
   - Calculate hourly melt rates using the enhanced temperature-index model
   Future functionality: remove restrictions on input data (allow implementation as a function)
-  - Script implementation example can be found here [Mejia et al., 2021](https://doi.org/10.18739/A2V97ZS6G).
+  - Script implementation example with figures (jupyter notebook) can be found here [Mejia et al., 2021](https://doi.org/10.18739/A2V97ZS6G).
   
  
 These scripts have been developed to aid in data analysis throughout my dissertation work studying how meltwater impacts the ice dyanmics of the Greenland Ice Sheet. The class `DiurnalExtrema` has specific inputs to customize and predict when diurnal extrema will occur so that noise in the timeseries data set has a minimial impact on extrema picks.
