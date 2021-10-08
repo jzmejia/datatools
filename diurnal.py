@@ -1,5 +1,7 @@
 """
 Suite of calculations for diurnally varying timeseries data
+
+- jzmejia
 """
 
 
@@ -106,8 +108,7 @@ def plot_extrema(func):
         return df
     return wrapper
 
-# WARNING BELOW ISN'T WORKING ITS MAKING THE DF RETURN NONE
-
+# DECORATOR WARNING - NOT WORKING ITS MAKING THE DF RETURN NONE
 # def threshold(func):
 #     @functools.wraps(func)
 #     def apply_threshold(*args, **kwargs) -> pd.DataFrame:
@@ -137,6 +138,41 @@ munits.registry[datetime.date] = converter
 munits.registry[datetime.datetime] = converter
 
 
+# class ExtremaMixIns(object):
+#     def __init__(self):
+#         pass
+
+
+# class Extrema(object):
+#     def __init__(self, timeseries, extrema_picks, stn=None):
+#         self.timeseries = timeseries
+#         self.df = readin(extrema_picks)
+#         self.stn = stn
+
+#     def readin(self, extrema_picks):
+#         if isinstance(extrema_picks, (str, Path)):
+#             df = pd.read_csv(extrema_picks, index_col=0, parse_dates=True)
+#         elif isinstance(extrema_picks, pd.DataFrame):
+#             df = extrema_picks
+#         else:
+#             raise ValueError(
+#                 f'extrema_pick type {type(extrema_picks)} unrecognized.'
+#             )
+#         return df
+
+#     def extrema_index(self, which="max"):
+#         """ Ex: self.extrema_series("min")
+#             Default: self.extrema_series()
+#         """
+#         return pd.DataFrame(data={which: self.df[which+"_val"].values},
+#                             index=self.df[which+"_time"].values)
+
+#     def amplitude(self):
+#         amp = self.df['max_val']-self.df['min_val']
+#         amp.index = amp.index.to_timestamp()
+#         return amp
+
+
 class DiurnalExtrema(object):
     """
     Timeseries with diurnally varying vals(1 max and 1 min per 24-hrs)
@@ -144,11 +180,11 @@ class DiurnalExtrema(object):
     Arguments:
         timeseries {pd.Series[DatetimeIndex, float64]}: Timeseries data.
 
-        minfirst [bool]
+        min_first [bool]
             Defaults to True.
-        maxnextday[bool]
+        max_next_day[bool]
             Defaults to True.
-        predictTiming [bool]
+        predict_timing [bool]
             Defaults to False.
         window [Tuple, Int] : timeperiod to use when predicting timing.
             Defaults to 4.
@@ -164,9 +200,9 @@ class DiurnalExtrema(object):
 
     def __init__(self,
                  timeseries,
-                 minfirst=True,
-                 maxnextday=True,
-                 predictTiming=False,
+                 min_first=True,
+                 max_next_day=True,
+                 predict_timing=False,
                  window=4,
                  threshold=None,
                  generate_figure=False,
@@ -177,18 +213,26 @@ class DiurnalExtrema(object):
         if self.timeseries.index.tz is not None:
             self.timeseries = self.timeseries.tz_localize(None)
         self.threshold = threshold
-        self.minfirst = minfirst
-        self.maxnextday = maxnextday
-        self.predictTiming = predictTiming
+        self.min_first = min_first
+        self.max_next_day = max_next_day
+        self.predict_timing = predict_timing
         self.window = window
         # self.threshold = threshold
         self.stn = stn
         self.generate_figure = generate_figure
         self.diurnal_vals = []
-
         self.df = self.find_diurnal_extrema()
+        # self.extrema = Extrema(self.timeseries, self.df)
         if self.generate_figure:
             self.plot()
+
+    # def __add__(self, other):
+    #     """merge extrema picks if station is the same"""
+    #     if self.stn != other.stn:
+    #         raise ValueError(
+    #             f'stations are not compatable, to override rename'
+    #         )
+    #     return
 
     def decimal_hours(self, which="max", check_before=12):
         """timestamp indexed extrema time pick in decimal hours (0-24)."""
@@ -235,18 +279,21 @@ class DiurnalExtrema(object):
         return amp
 
     def find_diurnal_extrema(self):
+        if self.predict_timing:
+            minOccurs, maxOccurs = self.predict_extrema()
+            # print(
+            #     f'predicted extrema timing:\n'
+            #     f'    minimum: {minOccurs}\n'
+            #     f'    maximum: {maxOccurs}\n')
         for day in self.timeseries.index.to_period('D').unique():
 
-            if self.predictTiming:
-
-                minOccurs, maxOccurs = self.predict_extrema()
-
+            if self.predict_timing:
                 min_window, max_window = get_occurance_windows(day, 8,
                                                                minOccurs,
                                                                maxOccurs)
                 minVal, minTime = self.get_real_extrema(
                     self.timeseries, min_window, 'min')
-                if self.minfirst and minTime and max_window[0] < minTime:
+                if self.min_first and minTime and max_window[0] < minTime:
                     max_window = (minTime, max_window[1])
                 maxVal, maxTime = self.get_real_extrema(
                     self.timeseries, max_window, 'max')
@@ -255,13 +302,13 @@ class DiurnalExtrema(object):
                 # find diurnal minimum
                 minVal, minTime = self.get_real_extrema(
                     self.timeseries, day, 'min')
-                if self.minfirst and self.maxnextday:
+                if self.min_first and self.max_next_day:
                     # find diurnal maximum in 18 hour window after minimum
                     maxVal, maxTime = self.get_real_extrema(self.timeseries,
                                                             (minTime, minTime
                                                              + pd.Timedelta(hours=18)),
                                                             'max')
-                elif not self.minfirst or not self.maxnextday:
+                elif not self.min_first or not self.max_next_day:
                     maxVal, maxTime = self.get_real_extrema(
                         self.timeseries, day, 'max')
 
@@ -276,7 +323,6 @@ class DiurnalExtrema(object):
 
         self.df = pd.DataFrame(self.diurnal_vals).set_index('Date')
         self.apply_threshold()
-
         return self.df
 
     def multi_indexed(self):
@@ -312,7 +358,8 @@ class DiurnalExtrema(object):
                              new_extrema_value=None,
                              new_extrema_time=None,
                              find_between=False,
-                             verbose=False):
+                             find_near=False
+                             ):
         """Change extrema picked by find_diurnal_extrema.x
         Args:
             day (Union[str, pd.Period, pd.DatetimeIndex]): extrema index
@@ -340,32 +387,52 @@ class DiurnalExtrema(object):
         if find_between:
             t0, t1 = add_hours(day, find_between)
             value, time = self.get_extrema(self.timeseries[t0:t1], which)
+            self.update_extrema(which, idx, value, time)
+        elif not new_extrema_value and not new_extrema_time:
+            for which in extrema:
+                self.update_extrema(which, idx, None, None)
         else:
-            value = new_extrema_value
-            time = new_extrema_time
-        # elif isinstance(new_extrema, str):
-        #     if new_extrema == 'None':
-        #         value, time = (None, None)
-        #     else:
-        #         raise ValueError(
-        #             f'new_extrema={new_extrema} is not a valid input\n'
-        #             'accepted values are (float64, timestamp) or None')
+            if new_extrema_value:
+                self.update_extrema_comp(
+                    which+'_val', idx, new_extrema_value)
+            if new_extrema_time:
+                self.update_extrema_comp(
+                    which+'_time', idx, pd.Timestamp(new_extrema_time))
+                if not new_extrema_value and find_near:
+                    self.update_extrema_comp(
+                        which+'_val', idx,
+                        self.value_around_time(
+                            new_extrema_time, return_max=(which == 'max')))
 
-        if verbose:
-            print(
-                f'Replacing {which} extrema for {day}\n'
-                f'   old extrema: {self.df.loc[idx, which+"_val"]}\n'
-                f'   new extrema: {value}'
-            )
+        pass
 
-        for which in extrema:
-            self.df.loc[idx, which+'_val'] = value
-            self.df.loc[idx, which+'_time'] = time
+    def value_around_time(self, time, dt=15, return_max=True):
+        """
+
+        Args:
+            time (str): time to search around in timeseries.
+            dt (int, float) : number of minutes to search about time.
+            choose_by (str) : how to choose value. 
+                Currently available options are 'max' or 'min'
+                Defaults to 'max'
+        """
+
+        subset = self.timeseries[pd.Timestamp(time)-pd.Timedelta(minutes=dt):
+                                 pd.Timestamp(time)+pd.Timedelta(minutes=dt)]
+        return subset.max() if return_max else subset.min()
+
+    def update_extrema_comp(self, column, idx, new_value):
+        self.df.loc[idx, column] = new_value
+        pass
+
+    def update_extrema(self, extrema, idx, value, time):
+        self.update_extrema_comp(extrema+"_val", idx, value)
+        self.update_extrema_comp(extrema+"_time", idx, time)
         pass
 
     @functools.lru_cache()
     def predict_extrema(self):
-        """Return average tiem of extrema occurance for timeseries in window"""
+        """Return average time of extrema occurance"""
 
         # temp (already in main script)###### CHECK THIS PART
         if self.timeseries.index.tz is not None:
@@ -384,17 +451,20 @@ class DiurnalExtrema(object):
         for day in calib_data.index.to_period('D').unique():
 
             # Find extrema for day in window
-            minVal, minTime = self.get_real_extrema(calib_data, day, 'min')
-            if minTime and self.minfirst and self.maxnextday:
+            minima = self.get_real_extrema(calib_data, day, 'min')
+            min_occurs = add_occurance(
+                minima[1]-day.to_timestamp(), min_occurs)
+
+            if minima[1] and self.min_first and self.max_next_day:
                 # find diurnal maximum in 18 hour window after minimum
-                maxVal, maxTime = self.get_real_extrema(calib_data,
-                                                        (minTime, minTime
-                                                         + pd.Timedelta(hours=18)),
-                                                        'max')
+                maxima = self.get_real_extrema(calib_data,
+                                               (minima[1], minima[1]
+                                                + pd.Timedelta(hours=18)),
+                                               'max')
             else:
-                maxVal, maxTime = self.get_real_extrema(calib_data, day, 'max')
-            min_occurs, max_occurs = add_occurance(
-                minTime, min_occurs), add_occurance(maxTime, max_occurs)
+                maxima = self.get_real_extrema(calib_data, day, 'max')
+            max_occurs = add_occurance(
+                maxima[1]-day.to_timestamp(), max_occurs)
         return mean_occurance(min_occurs), mean_occurance(max_occurs)
 
     def get_real_extrema(self, ts, window, min_or_max):
@@ -439,11 +509,12 @@ class DiurnalExtrema(object):
             ax = self.fig.add_subplot(111)
             ax.plot(self.timeseries, linewidth=1)
             # plt.plot(timeseries,'.c',markersize=1)
-            ax.plot(self.df.min_time, self.df.min_val, '.')
-            ax.plot(self.df.max_time, self.df.max_val, '.r')
+            ax.plot(self.df.min_time, self.df.min_val, 'o', markersize=3)
+            ax.plot(self.df.max_time, self.df.max_val, 'or', markersize=3)
             ax.set_ylabel(self.timeseries.name)
             if self.stn is not None:
                 ax.set_title(self.stn)
+            return ax
 
     def plot_extrema_picks(self, ax=None, *args, **kwargs):
         if ax is None:
@@ -517,10 +588,16 @@ def create_timewindow(day, center, numhours):
 def add_occurance(occurance_time, occurance_list):
     """
     Rounds time to nearest hour and appends to list
-    Inputs: occurance_time, occurance_list
-    Returns: occurance_list
+
+    Inputs: 
+        occurance_time [pd.Timedelta]
+        occurance_list [list]
+    Returns: 
+        occurance_list [list]
     """
-    occurance_list.append(occurance_time.round('H').hour)
+    # print(f'occurance_time: {occurance_time}, list: {occurance_list}')
+    if occurance_time is not None:
+        occurance_list.append(timedelta_to_hours(occurance_time))
     return occurance_list
 
 
@@ -545,11 +622,9 @@ def check_length(data, *args):
 def start_before_end(start, end) -> bool:
     # dtypes=(pd.Timestamp, np.datetime64)
     start_first = False
-    if isinstance(start, (pd.Timestamp, np.datetime64)) and isinstance(end, (pd.Timestamp, np.datetime64)):
-        if start < end:
-            start_first = True
-        else:
-            raise ValueError(f'Window invalid: end of window before start')
+    if isinstance(start, (pd.Timestamp, np.datetime64)) and isinstance(
+            end, (pd.Timestamp, np.datetime64)):
+        start_first = True if start < end else False
     else:
         raise TypeError(f'Argument dtypes={type(start)},{type(end)}\n'
                         f'valid dtypes are: {(pd.Timestamp, np.datetime64)}')
@@ -640,6 +715,8 @@ def to_exact_indexing(window, timeseries):
         # if window is in the correct format just return it
         if isinstance(start, pd.Timestamp) and isinstance(end, pd.Timestamp):
             start_before_end(start, end)
+        if start is None:
+            return None
         # begin conversions/tests
         elif isinstance(start, str) and isinstance(end, str):
             if start == 'first':
@@ -651,7 +728,6 @@ def to_exact_indexing(window, timeseries):
             else:
                 start = pd.to_datetime(start)
                 end = make_end_of_day(pd.to_datetime(end))
-
     elif isinstance(window, pd.Period):
         start = window.to_timestamp(how='s')
         end = window.to_timestamp(how='e')
@@ -660,12 +736,11 @@ def to_exact_indexing(window, timeseries):
         end = start + pd.Timedelta(days=window)
         end = make_end_of_day(end)
 
-    # match data resolution
+        # match data resolution
     subset = timeseries[start:end]
     if not subset.empty and len(subset) > 2:
         idx = random.randint(1, len(subset)-1)
         time_between_data = subset.index[idx]-subset.index[idx-1]
-
         window_res = str(time_between_data.components.minutes)+'T'
         if time_between_data.components.minutes == 0:
             window_res = str(time_between_data.components.seconds)+'s'
@@ -685,13 +760,5 @@ def timestamp_to_decimal_hours(timestamp):
     return timestamp.hour + decimal
 
 
-class Lags(object):
-    def __init__(self, extrema_dfs, keys, key_label):
-        self.dfs = extrema_dfs
-        self.keys = keys
-        self.key_label = key_label
-        self.midx = self.concat_midx()
-
-    def merge_midx(self):
-        mdf = pd.concat(self.dfs, keys=self.keys, names=self.key_label)
-        return mdf.swaplevel(0, 1, axis=0).sort_index(axis=0, level=0)
+def timedelta_to_hours(dt):
+    return (dt.days * 24) + (dt.seconds / (60*60))
