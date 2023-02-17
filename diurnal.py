@@ -196,6 +196,26 @@ class DiurnalExtrema(object):
         stn
             Defaults to None.
 
+
+    Example:
+        import numpy as np
+        import pandas as pd
+        from datatools.diurnal import DiurnalExtrema
+        
+        # create diurnally varying timeseries to use as example
+        # timestep = 15 min (e.g., 1441/15=96 )
+        num_days = 8
+        T = 96 * num_days
+        x = np.arange(0,T)
+        y = np.sin(2*np.pi*x/96)+2.5
+
+        #convert to timeseries using arbitrary start date
+        start_on = '2020-06-01'
+        date_index = pd.date_range(start_on, periods=T, freq='15T')
+        df = pd.DataFrame(data={'data': y},index=date_index)
+        
+        extrema_picks = DiurnalExtrema(df, min_first=False, max_next_day=True)
+        
     """
 
     def __init__(self,
