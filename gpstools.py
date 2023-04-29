@@ -1,12 +1,14 @@
 #!/user/bin/env python
 
 """
-    gpstools.py
+gpstools.py
+Created by: JZMejia
 
-    Created by: JZMejia
+A collection of tools for reading in and working with GNSS data. 
+Tool development primarily for cryospheric applications but many are universal.
 
 
-    """
+ """
 
 
 from math import atan, sin, cos, sqrt
@@ -21,13 +23,14 @@ from random import randint
 import matplotlib.pyplot as plt
 
 
-from datatools.constants import SECONDS_PER_DAY
 from datatools.utils import c_rolling
 # <TODO: automatically see which columns are in file and import accordingly>
 
 FrameOrSeries = Union[pd.DataFrame, pd.Series]
 WindowTypes = Union[Tuple[str], Tuple[str, str]]
 WindowList = List[WindowTypes]
+
+SECONDS_PER_DAY = 60*60*24
 
 
 # Dictionaries
@@ -322,12 +325,7 @@ class OnIce:
         return base_stn[0] if len(base_stn) > 0 else None
 
     def _antenna_lowering_correction(self, correct_years: list) -> pd.Series:
-        """correct vertical gps position for antenna adjustments.
-
-
-
-
-        """
+        """correct vertical gps position for antenna adjustments."""
         if self.stn in antenna_adjustments and self.year in correct_years:
             info = antenna_adjustments[self.stn]
             adjust_at = info['date']
@@ -366,7 +364,7 @@ class OnIce:
         return dropDF
 
     def _calc_ellipsoidal_height(self) -> Union[FrameOrSeries, None]:
-        """base-onIce height difference to ellipsoidal height in me"""
+        """base-onIce height difference to ellipsoidal height in m"""
         ellip_hgt = None
         if self.base_stn is not None:
             ellip_hgt = self.base_stn.ellipsoidal_height + self.data.dheight
@@ -552,12 +550,12 @@ class OnIce:
         # _create_vel_header(component, stat_window, separation_window, window)
         return self.vel
 
-    def _create_vel_header(component,
-                           stat_window,
-                           separation_window,
-                           window):
-        header = ''
-    pass
+    # def _create_vel_header(component,
+    #                        stat_window,
+    #                        separation_window,
+    #                        window):
+    #     header = ''
+    # pass
 
     def _name_file(self, DAT: str, FLAG: str, ext='.csv') -> str:
         """generates file name in the format CODEYY_DAT_FLAG.ext
@@ -683,8 +681,8 @@ def subset_from_bounds(series, bounds, closed):
     return series[bound[0]:bound[1]]
 
 
-def _create_vel_header():
-    pass
+# def _create_vel_header():
+#     pass
 
 
 def _subset_from_windows(df: FrameOrSeries, windows) -> pd.DataFrame:
