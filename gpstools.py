@@ -12,18 +12,20 @@ Tool development primarily for cryospheric applications but many are universal.
 
 
 from math import atan, sin, cos, sqrt
-from datetime import timedelta
+# from datetime import timedelta
 from pathlib import PurePath, Path
 import time
-from typing import List, Tuple, Optional, Union, Any
+from typing import List, Tuple, Optional, Union
 
 import pandas as pd
 import numpy as np
 from random import randint
 import matplotlib.pyplot as plt
+from scipy import signal
 
 
-from datatools.utils import c_rolling
+from utils import c_rolling
+from diurnal import to_exact_indexing
 # <TODO: automatically see which columns are in file and import accordingly>
 
 FrameOrSeries = Union[pd.DataFrame, pd.Series]
@@ -38,32 +40,32 @@ SECONDS_PER_DAY = 60*60*24
 # station_names, (tuple(str, str))
 # optional - for convenience
 
-station_names = (
-    # ('receiver code (4 characters)','location code (4 chars')
-    ('USF1', 'LMID'),
-    ('USFK', 'ROCK'),
-    ('USFS', 'SBPI')
-)
+# station_names = (
+#     # ('receiver code (4 characters)','location code (4 chars')
+#     ('USF1', 'LMID'),
+#     ('USFK', 'ROCK'),
+#     ('USFS', 'SBPI')
+# )
 
-EGM2008 = {
-    # station locationi code: EGM2008 elevation (m)
-    'lmid': 29.0059,
-    'kaga': 28.3183,
-    'rock': 27.1274
-}
-EGM96 = {
-    # station location code: EGM96 elevation (m)
-    'lmid': 29.2909,
-    'kaga': 29.0784,
-    'rock': 27.6441
-}
+# EGM2008 = {
+#     # station locationi code: EGM2008 elevation (m)
+#     'lmid': 29.0059,
+#     'kaga': 28.3183,
+#     'rock': 27.1274
+# }
+# EGM96 = {
+#     # station location code: EGM96 elevation (m)
+#     'lmid': 29.2909,
+#     'kaga': 29.0784,
+#     'rock': 27.6441
+# }
 
 
-# background velocities for stations - optional used with onice stations
-background_velocities_mpd = (
-    # (station location code, background velocity in meters per day)
-    ('LMID', 0.244),
-)
+# # background velocities for stations - optional used with onice stations
+# background_velocities_mpd = (
+#     # (station location code, background velocity in meters per day)
+#     ('LMID', 0.244),
+# )
 
 
 _directions = (
@@ -163,18 +165,18 @@ class BaseStn:
 # dictionary of antenna adjustments
 # adjustment (positive is raising the antenna, unit meters)
 # example
-antenna_adjustments = {
-    'LMID': {
-        'date': pd.Timestamp('2018-07-07 13:28:00'),
-        'adjustment': -2,
-        'drop_until': pd.Timestamp('2018-07-07 21:40:00')
-    },
-    'JEME': {
-        'date': pd.Timestamp('2018-07-17 23:40:00'),
-        'adjustment': -2,
-        'drop_until': pd.Timestamp('2018-07-18 00:45:00')
-    }
-}
+# antenna_adjustments = {
+#     'LMID': {
+#         'date': pd.Timestamp('2018-07-07 13:28:00'),
+#         'adjustment': -2,
+#         'drop_until': pd.Timestamp('2018-07-07 21:40:00')
+#     },
+#     'JEME': {
+#         'date': pd.Timestamp('2018-07-17 23:40:00'),
+#         'adjustment': -2,
+#         'drop_until': pd.Timestamp('2018-07-18 00:45:00')
+#     }
+# }
 
 
 def get_station_name(gps_data: Union[Path, PurePath, str, FrameOrSeries],
@@ -194,18 +196,7 @@ def get_station_name(gps_data: Union[Path, PurePath, str, FrameOrSeries],
     else:
         stn_ID = kwargs['stn_ID'] if 'stn_ID' in kwargs else input(
             'station ID(gnss receiver name), e.g. "usf1"')
-
-    stn_name = [name for i, name in station_names if i == stn_ID]
-    if not stn_name:
-        stn_name = [name for i, name in station_names if name == stn_ID]
-    return stn_ID, stn_name[0]
-
-
-# class Station:
-#     def __init__(self, file, **kwargs):
-#         self.info = None
-#         self.name = None
-#         self.ID = None
+    return stn_ID
 
 
 class OnIce:
@@ -255,24 +246,15 @@ class OnIce:
         self.doy = self.data.doy
         self.year = self.date[0].year if self.date.year[0] == self.date.year[-1] else None
         self.base_stn = self._infer_base_stn(base_stn)
-        try:
-            if self.stn == 'LMID':
-                self.data = self.data.drop(
-                    index=self.data[pd.Timestamp('2018-3-23 01:30'):
-                                    pd.Timestamp('2018-3-25 23:59')].index)
-        except:
-            pass
         # * Change assigning attrs from explicit to implicit using a dic maybe
         # * with a list of col names
 
         self.dnorth = self.data.dnorth
         self.deast = self.data.deast
 
-        self.z_without_lowering_correction = self.data['dheight']
-        self.z = self._antenna_lowering_correction([2018])
-        self.ellipsoidal_height = self._calc_ellipsoidal_height()
-        self.elevation = self._calc_elevation(
-        ) if self.ellipsoidal_height is not None else None
+        self.z = self.data['dheight']
+        # self.ellipsoidal_height = self._calc_ellipsoidal_height()
+        # self.elevation = self._calc_elevation() if self.ellipsoidal_height is not None else None
 
         if 'dnorth_err' in self.data:
             self.errs = pd.DataFrame(
@@ -314,37 +296,25 @@ class OnIce:
         self.sampling_rate = infer_sampling(self.data)
         self.vel_header = None
 
-        # if 'usf118' in self.file:
-        #     t1 = pd.to_datetime('2018-07-07 16:28:29')
-        #     t2 = pd.to_datetime('2018-07-07 17:06:00')
-        #     z_adj = self.data.dheight[t1]-self.data.dheight[t2]
-        #     self.z_corr = self.z
-        #     self.z_corr[t2:] = self.z_corr[t2:]+z_adj
+
 
     def __str__(self):
         return print('gps data')
 
-    def _infer_base_stn(self, base_stn_kw):
-        base_stn_kw = 'KAGA' if self.year == 2017 else base_stn_kw
-        name_in = self.file_name.name if base_stn_kw is None else base_stn_kw
-        base_stn = [obj for name, obj in defined_base_stations.items()
-                    if name.upper() in name_in]
-        return base_stn[0] if len(base_stn) > 0 else None
+    # def _antenna_lowering_correction(self, correct_years: list) -> pd.Series:
+    #     """correct vertical gps position for antenna adjustments."""
+    #     if self.stn in antenna_adjustments and self.year in correct_years:
+    #         info = antenna_adjustments[self.stn]
+    #         adjust_at = info['date']
 
-    def _antenna_lowering_correction(self, correct_years: list) -> pd.Series:
-        """correct vertical gps position for antenna adjustments."""
-        if self.stn in antenna_adjustments and self.year in correct_years:
-            info = antenna_adjustments[self.stn]
-            adjust_at = info['date']
+    #         z_adj = self.data['dheight'][adjust_at:]-info['adjustment']
+    #         # modify dataframe self.data with adjusted height
+    #         self.data.loc[z_adj.index, 'dheight'] = z_adj
 
-            z_adj = self.data['dheight'][adjust_at:]-info['adjustment']
-            # modify dataframe self.data with adjusted height
-            self.data.loc[z_adj.index, 'dheight'] = z_adj
-
-            if info['drop_until'] is not None:
-                self.data = self.data.drop(
-                    self.data[adjust_at:info['drop_until']].index)
-        return self.data[['dheight']]
+    #         if info['drop_until'] is not None:
+    #             self.data = self.data.drop(
+    #                 self.data[adjust_at:info['drop_until']].index)
+    #     return self.data[['dheight']]
 
     def plot_NEU(self, **kwargs):
         fig, ax = plt.subplots(nrows=3, ncols=1, sharex=True,
@@ -370,19 +340,19 @@ class OnIce:
             self.drop_from_instance(dropDF.index)
         return dropDF
 
-    def _calc_ellipsoidal_height(self) -> Union[FrameOrSeries, None]:
-        """base-onIce height difference to ellipsoidal height in m"""
-        ellip_hgt = None
-        if self.base_stn is not None:
-            ellip_hgt = self.base_stn.ellipsoidal_height + self.data.dheight
-            ellip_hgt = ellip_hgt.rename('ellipsoidal_height')
-        return ellip_hgt
+    # def _calc_ellipsoidal_height(self) -> Union[FrameOrSeries, None]:
+    #     """base-onIce height difference to ellipsoidal height in m"""
+    #     ellip_hgt = None
+    #     if self.base_stn is not None:
+    #         ellip_hgt = self.base_stn.ellipsoidal_height + self.data.dheight
+    #         ellip_hgt = ellip_hgt.rename('ellipsoidal_height')
+    #     return ellip_hgt
 
-    def _calc_elevation(self):
-        local_geoid_height = [val for stn, val in EGM2008.items()
-                              if stn.upper() == self.stn][0]
-        elev = self.ellipsoidal_height - local_geoid_height
-        return elev.rename('elevation')
+    # def _calc_elevation(self):
+    #     local_geoid_height = [val for stn, val in EGM2008.items()
+    #                           if stn.upper() == self.stn][0]
+    #     elev = self.ellipsoidal_height - local_geoid_height
+    #     return elev.rename('elevation')
 
     def drop_from_instance(self, indices):
         self.data = self.data.drop(indices)
@@ -468,7 +438,7 @@ class OnIce:
         df = clip_to_window(df, window, col_name='z')
         # switch index to along flow direction (will be detrended wrt index)
         df = df.set_index('xflow')
-        from scipy import signal
+        
         df['dheight_xdetrended'] = signal.detrend(df['z'], type='linear')
         df = df.set_index('timestamp')
         return df
@@ -779,7 +749,6 @@ def clip_to_window(df, window, col_name):
     Returns:
         df (pd.DataFrame): dataframe with col
     """
-    from datatools.diurnal import to_exact_indexing
     if window is not None:
         window = to_exact_indexing(window, df[col_name])
         df = df[window[0]:window[1]]
