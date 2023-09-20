@@ -112,6 +112,8 @@ class BaseStn:
         .X (float): unit (m) 
         .Y (float): 
         .Z (float): 
+        
+        TODO: make calculation to get lat/lon from XYZ coords.
     """
 
     def __init__(self,
@@ -125,33 +127,38 @@ class BaseStn:
         self.geod_pos = (self.Lat, self.Long, self.ellipsoidal_height)
         self.X, self.Y, self.Z = site_pos
         self.name = name.upper()
-        self.geoid_height = [value
-                             for key, value in EGM2008.items()
-                             if key.upper() == self.name][0]
-        self.elevation = self.ellipsoidal_height - self.geoid_height
+    
 
     def __str__(self):
         return 'Base Station Object'
 
     def __repr__(self):
         return 'Base Station '+self.name
+    
+    def geoid_height(self):
+        pass
+        # [value for key, value in EGM2008.items() 
+        #  if key.upper() == self.name][0]
+    
+    def elevation(self,geoid_height):
+        return self.ellipsoidal_height - geoid_height
 
 
 # define base stations used in deployment
 # (enables GPS elevation calculations)
 # e.g.
-rock = BaseStn('ROCK',
-               site_pos=(1412215.2584, -1711212.5767, 5960386.7316),
-               geod_pos=(69.708219352, 309.531891746, 594.5942))
+# rock = BaseStn('ROCK',
+#                site_pos=(1412215.2584, -1711212.5767, 5960386.7316),
+#                geod_pos=(69.708219352, 309.531891746, 594.5942))
 
-kaga = BaseStn('KAGA',
-               site_pos=(1464296.0967, -1733658.2881, 5940955.0164),
-               geod_pos=(69.222301946, 310.185368004, 150.0098))
+# kaga = BaseStn('KAGA',
+#                site_pos=(1464296.0967, -1733658.2881, 5940955.0164),
+#                geod_pos=(69.222301946, 310.185368004, 150.0098))
 
-defined_base_stations = {
-    'ROCK': rock,
-    'KAGA': kaga
-}
+# defined_base_stations = {
+#     'ROCK': rock,
+#     'KAGA': kaga
+# }
 
 # dictionary of antenna adjustments
 # adjustment (positive is raising the antenna, unit meters)
@@ -787,6 +794,7 @@ def find_label(component):
 
 
 def pct_day(duration):
+    """the percentage of a day for a given duration"""
     return pd.Timedelta(duration).seconds / SECONDS_PER_DAY
 
 
