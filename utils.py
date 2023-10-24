@@ -2,6 +2,7 @@
 """
 import re
 import pandas as pd
+import numpy as np
 from typing import Union, Optional, Tuple
 
 FrameOrSeries = Union[pd.DataFrame, pd.Series]

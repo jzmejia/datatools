@@ -5,11 +5,13 @@ gpstools.py
 Created by: JZMejia
 
 A collection of tools for reading in and working with GNSS data. 
-Tool development primarily for cryospheric applications but many are universal.
+Tool development primarily for cryospheric applications but many
+are universal.
 
-
+Last update: 24 Oct 2023
  """
 
+#----------------------------------------------------------------------|------|
 
 from math import atan, sin, cos, sqrt
 # from datetime import timedelta
@@ -26,7 +28,7 @@ from scipy import signal
 
 from utils import c_rolling
 from diurnal import to_exact_indexing
-# <TODO: automatically see which columns are in file and import accordingly>
+# <TODO: automatically see which columns are in file & import >
 
 FrameOrSeries = Union[pd.DataFrame, pd.Series]
 WindowTypes = Union[Tuple[str], Tuple[str, str]]
@@ -196,7 +198,7 @@ def get_station_name(gps_data: Union[Path, PurePath, str, FrameOrSeries],
     else:
         stn_ID = kwargs['stn_ID'] if 'stn_ID' in kwargs else input(
             'station ID(gnss receiver name), e.g. "usf1"')
-    return stn_ID
+    return stn_ID, stn_ID
 
 
 class OnIce:
@@ -211,7 +213,7 @@ class OnIce:
         first four chars of the file are the station ID
 
     Attributes
-    ---------------
+    ----------
         data (pandas.DataFrame) : Data from file in a pandas data frame.
         file (str) : Path to datafile
         stn_ID (str) : 4 character station ID determined from input file name.
@@ -245,8 +247,8 @@ class OnIce:
         self.date = self.data.index
         self.doy = self.data.doy
         self.year = self.date[0].year if self.date.year[0] == self.date.year[-1] else None
-        self.base_stn = self._infer_base_stn(base_stn)
-        # * Change assigning attrs from explicit to implicit using a dic maybe
+        self.base_stn = base_stn
+        # * Change assigning attrs from explicit to implicit using a dic
         # * with a list of col names
 
         self.dnorth = self.data.dnorth
@@ -254,52 +256,124 @@ class OnIce:
 
         self.z = self.data['dheight']
         # self.ellipsoidal_height = self._calc_ellipsoidal_height()
-        # self.elevation = self._calc_elevation() if self.ellipsoidal_height is not None else None
+        # self.elevation = self._calc_elevation() if self.ellipsoidal_height 
+        # is not None else None
 
         if 'dnorth_err' in self.data:
             self.errs = pd.DataFrame(
                 {'N': self.data.dnorth_err, 'E': self.data.deast_err,
                     'U': self.data.dheight_err})
-
-        if _is_file(gps_data):
-            # direction_diff is shifted to the origin (data - data at t=0)
-            # this means each timeseries will start at 0 (origin)
-            self.dnorth_diff = self.dnorth - self.dnorth.dropna()[0]
-            self.deast_diff = self.deast - self.deast.dropna()[0]
-
-            self.horizontal_disp = np.sqrt(self.deast_diff**2
-                                           + self.deast_diff**2)
-
-            self.dnorth_daily = self.dnorth.resample('1D').mean().dropna()
-            self.deast_daily = self.deast.resample('1D').mean().dropna()
-            # NOTE np.atan
-            self.alpha = atan((self.dnorth_daily[-1] - self.dnorth_daily[0])
-                              / (self.deast_daily[-1] - self.deast_daily[0]))
-
-            self.xflow = -1 * (cos(self.alpha) * self.deast_diff
-                               + sin(self.alpha) * self.dnorth_diff)
-
-            self.xtran = (-1 * sin(self.alpha) * (self.deast_diff)
-                          + cos(self.alpha) * (self.dnorth_diff))
-
-            self.data['xtran'] = self.xtran
-            self.data['xflow'] = self.xflow
-        else:
-            self.xflow = self.data['xflow']
-            self.xtran = self.data['xtran']
-
-        self.dist_from_basestn = np.sqrt(
-            self.data.dnorth ** 2 + self.data.deast ** 2)
-        self.data['Dist'] = self.dist_from_basestn
-
-        self.baseline = np.sqrt(self.dnorth[0]**2+self.deast[0]**2)
         self.sampling_rate = infer_sampling(self.data)
+        
+        # first pass at reprojection to station flow direction
+                # if _is_file(gps_data):
+        #     else:
+        # self.xflow = self.data['xflow']
+        # self.xtran = self.data['xtran']
+        self.xflow, self.xtran = self.reproject_to_flow_direction()
+        
+        # self.dist_from_basestn = self.calc_dist(self.data.dnorth,self.data.deast)
+        # self.data['Dist'] = self.dist_from_basestn
+
+        # self.baseline = self.dist_from_basestn.dropna()[0]
+    
         self.vel_header = None
+        
+    def calc_dist(a,b):
+        """distance between a and b"""
+        return sqrt(a**2+b**2)
+    
+    
+    def reproject_to_flow_direction(self, alpha=None, update_instance=True, 
+                                    preserve_ref=False):
+        """reproject northing and easting positions by alpha radians
+        
+        direction_diff is shifted to the origin (data - data at t=0)
+        this means each timeseries will start at 0 (origin)
+        
+        Parameters
+        ----------
+        alpha : float, optional
+            angle alpha in radians used to transform coordinate system, 
+            by default None. If no alpha is given alpha will be calculated
+            using the first and last positions defined in self.data.dnorth
+            and self.data.deast
+        update_instance : bool, optional
+            update instance with calculated reprojection, by default True
+        preserve_ref : bool, optional
+            preserve reference frame of position data, by default False. 
+            In most cases positions are defined as distance from a reference
+            point (e.g., a base station's location). If reference is 
+            preserved xflow and xtran will be calculated as distance from
+            this reference point in the along flow and across flow 
+            directions. Otherwise, xflow and xtran will be calculated 
+            as distance in either direction from the starting position 
+            at time t=0.
+            
+        Returns
+        -------
+        xflow : pd.Series
+            Position timeseries in the along-flow direction defined by alpha.
+            Units are same as input data. 
+        xtran : pd.Series
+            Position timeseries in the across-flow direction.
+            xtran defined as distance from starting position at time t=0
+            in the direction perpendicular to flow. Units are preserved.
+        """
 
+        if preserve_ref:
+            dnorth, deast = self.dnorth, self.deast
+        else:
+            t0 = self.determine_start()
+            # calc xflow and xtran as dist from starting position at time t0
+            dnorth = self.dnorth - self.dnorth.dropna()[t0]
+            deast =  self.deast - self.deast.dropna()[t0]
+            # self.horizontal_disp = self.calc_dist(dnorth,deast)
 
+        
+        alpha = alpha if alpha else self.flow_direction_angle()
+        xflow = self.calc_xflow(alpha,deast,dnorth)
+        xtran = self.calc_xtran(alpha,deast,dnorth)
+
+        # update data storage dataframe by adding new columns
+        if update_instance:
+            self.data['xtran'] = xtran
+            self.data['xflow'] = xflow
+            self.xflow = xflow
+            self.xtran = xtran
+            self.alpha = alpha
+            
+        return xflow, xtran
+    
+    def flow_direction_angle(self):
+        """calculate alpha from first and last positions"""
+        dnorth_daily = self.dnorth.resample('1D').mean().dropna()
+        deast_daily = self.deast.resample('1D').mean().dropna()
+        
+        alpha = atan((dnorth_daily[-1] - dnorth_daily[0])
+                            / (deast_daily[-1] - deast_daily[0]))
+        
+        return alpha
+        
+
+    def determine_start(self):
+        idx=0
+        for i in range(100):
+            diff=self.data.index[idx+1]-self.data.index[idx]
+            if diff.seconds <= self.sampling_rate:
+                break
+        return i
 
     def __str__(self):
         return print('gps data')
+    
+    def calc_xflow(self,alpha,easting,northing):
+        """transform northing and easting to along flow reference frame"""
+        return cos(alpha)*easting + sin(alpha)*northing
+    
+    def calc_xtran(self,alpha,easting,northing):
+        """transform northing and easting to across flow reference frame"""
+        return -1*sin(alpha)*easting + cos(alpha)*northing
 
     # def _antenna_lowering_correction(self, correct_years: list) -> pd.Series:
     #     """correct vertical gps position for antenna adjustments."""
@@ -451,8 +525,8 @@ class OnIce:
                       component: str,
                       stat_window='3T',
                       separation_window='2H',
-                      #   smoothing: Optional[str] = None,
-                      #   set_min_periods: Optional[Union[int, None]] = False,
+                      smoothing: Optional[str] = None,
+                      set_min_periods: Optional[Union[int, None]] = False,
                       window: Optional[WindowTypes] = None,
                       timeit=False
                       ) -> pd.DataFrame:
@@ -493,10 +567,10 @@ class OnIce:
 
         df = clip_to_window(self.data, window, coord_labels[0])[coord_labels]
 
-        # if smoothing is not None:
-        #     min_periods = self.samples_in_timespan(
-        #         smoothing) if set_min_periods is False else set_min_periods
-        #     df = c_rolling(df, smoothing, min_periods=min_periods)
+        if smoothing is not None:
+            min_periods = self.samples_in_timespan(
+                smoothing) if set_min_periods is False else set_min_periods
+            df = c_rolling(df, smoothing, min_periods=min_periods)
 
         # create a series of datetimes in intervals=stat_window
         binned_timeseries = pd.date_range(
@@ -564,7 +638,8 @@ def _is_file(obj):
 
 
 def _get_data(gps_data: Union[Path, PurePath, str, FrameOrSeries]):
-    return gps_data if isinstance(gps_data, pd.DataFrame) else load_NEUgps(gps_data)
+    return gps_data if isinstance(gps_data, pd.DataFrame
+                                  ) else load_NEUgps(gps_data)
 
 
 def runtime(t):
@@ -721,7 +796,14 @@ def normalize_gps_data(data1, data2, norm_val):
 
 
 def infer_sampling(df):
-    """inferred sampling rate in seconds"""
+    """inferred sampling rate in seconds
+    
+    Args:
+        df (pd.DataFrame) : time-indexed data frame
+        
+    Returns:
+        sampling_rate (int) : sampling rate in seconds.
+    """
     num_samples = 1000 if len(df) > 1000 else randint(4, len(df)-2)
     start, end = random_index_for_slice(df, num_samples)
     lst = (df.index[start+1:end+1]-df.index[start:end]).seconds.to_list()
@@ -744,6 +826,7 @@ def clip_to_window(df, window, col_name):
     Args:
         df (pd.DataFrame): time-indexed dataframe
         window (tuple): [description]
+            str, tuple, window, pd.Period
         col_name (str): column for setting window
 
     Returns:
@@ -756,6 +839,22 @@ def clip_to_window(df, window, col_name):
 
 
 def find_label(component):
+    """return second tuple entry in _directions matching each letter in arg
+
+    Parameters
+    ----------
+    component : str
+        string with letters matching tuple entries in _directions
+
+    Returns
+    -------
+    labels : list
+        list of strings taken from _directions
+        
+        
+    !NOTE: not written to have any exceptions! i.e., error will be raised
+    if component has a letter not in _directions. 
+    """
     labels = []
     for letter in component:
         labels.extend([name for i, name in _directions if i == letter])
@@ -780,7 +879,7 @@ def has_data(num_obs, *args):
 
 
 def is_good(df0, df1, num_obs):
-    "True if df's aren't empty and have more than 3 observations"
+    """True if df's aren't empty and have more than 3 observations"""
     is_good = False
     if not either_empty(df0, df1):
         is_good = has_data(num_obs, df0, df1)
