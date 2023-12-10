@@ -526,7 +526,7 @@ class OnIce:
                       stat_window='3T',
                       separation_window='2H',
                       smoothing: Optional[str] = None,
-                      set_min_periods: Optional[Union[int, None]] = False,
+                      set_min_periods: Optional[Union[int, None]] = None,
                       window: Optional[WindowTypes] = None,
                       timeit=False
                       ) -> pd.DataFrame:
@@ -545,10 +545,16 @@ class OnIce:
             separation_window (str, optional): number of hours between
                 positions measurements to determine displacement.
                 Defaults to 2 hours.
-            smoothing_window (int, optional):
+            smoothing (int, optional):
                 Rolling mean window length applied to positions before
                 calculating velocity. No smoothing applied if None.
                 Defaults to None.
+            set_min_periods (int, optional):
+                minimum number of observations required in applied 
+                smoothing of position data before velocity calculation.
+                Note, if value given to set_min_periods is greater than
+                the number of observations in that timespan there will be
+                no datapoints and an empty timeseries. Defaults to None.
             window (tuple) : timespan to perform velocity calculation.
                 Defaults to entire timeseries.
             timeit (bool, optional) : print the runtime to screen.
@@ -918,6 +924,29 @@ def check_input(value, *args):
 
 
 def position_subsets(df, idx, t_shift, stat_shift, closed=None):
+    """
+    
+
+    Parameters
+    ----------
+    df : _type_
+        _description_
+    idx : _type_
+        _description_
+    t_shift : str
+        delta t or timespan between observations subsets
+        separation window/2
+    stat_shift : _type_
+        length of time to preform statistics on to get values at either
+        side of t_shift for calcualtion. stat window/2
+    closed : _type_, optional
+        _description_, by default left
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
     t0, t1 = get_range(idx, t_shift)
     x_bounds = tuple(map(lambda x: get_range(x, stat_shift), (t0, t1)))
     return tuple(map(lambda x: subset_from_bounds(df, x, closed), x_bounds))
