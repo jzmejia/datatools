@@ -8,7 +8,7 @@ A collection of tools for reading in and working with GNSS data.
 Tool development primarily for cryospheric applications but many
 are universal.
 
-Last update: 24 Oct 2023
+Last update: 22 Oct 2024 by jzmejia
  """
 
 #----------------------------------------------------------------------|------|
