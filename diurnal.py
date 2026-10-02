@@ -1,7 +1,22 @@
 """
-Suite of calculations for diurnally varying timeseries data
+diurnal.py
 
-- jzmejia
+Suite of calculations for diurnally varying timeseries data
+These scripts allow customization for automatic diurnal 
+minimum and maximum detection from timeseries data. 
+Originally developed for application to glaciology but 
+will work for any type of data with a diurnal (daily) 
+variational pattern. 
+
+Developed by Jessica Mejia Ph.D.
+Syracuse University
+contact: jzmejia@syr.edu
+
+Last Updated: 22 September 2026
+
+
+
+(c) 2026, Jessica Mejia
 """
 
 
@@ -175,7 +190,19 @@ munits.registry[datetime.datetime] = converter
 
 class DiurnalExtrema(object):
     """
-    Timeseries with diurnally varying vals(1 max and 1 min per 24-hrs)
+    Extrema (max/min) values determined from input timeseries data set. 
+    
+    Produces an object containing Data statistics and values derived from
+    input Timeseries data that exhibits diurnal variability (daily).
+    Daily maximum and minimum values will be determined with allowances for 
+    the maximum and minimum to lay outside of a calendar day, and will instead
+    respect a 24-hour (flexible) period in which a minimum and maximum will be found.
+    Class attributes include pandas dataframe objects of derived data, convenience
+    functions for data display and plotting and class methods to correct 
+    automatically determined extrema picks. 
+
+
+    (1 max and 1 min per 24-hrs)
 
     Arguments:
         timeseries {pd.Series[DatetimeIndex, float64]}: Timeseries data.
@@ -289,11 +316,18 @@ class DiurnalExtrema(object):
             idx (list of str): dates where extrema pick is truncated.
             which (str, optional): extrema that is truncated.
                 Defaults to 'min'
-        """
 
+        TODO: write class method
+        STATUS: under development
+        """
         pass
 
     def amplitude(self):
+        """Calculate amplitude of diurnal variability
+
+        Returns:
+            pd.Series: time-indexed pandas series of amplitudes
+        """
         amp = self.df['max_val']-self.df['min_val']
         amp.index = amp.index.to_timestamp()
         return amp
@@ -380,8 +414,10 @@ class DiurnalExtrema(object):
                              find_between=False,
                              find_near=False
                              ):
-        """Change extrema picked by find_diurnal_extrema.x
-        Args:
+        """User function to change extrema picked by .find_diurnal_extrema()
+
+
+        Arguments
             day (Union[str, pd.Period, pd.DatetimeIndex]): extrema index
             new_extrema (tuple or str): (extrema value, extrema time)
                 or none
@@ -389,7 +425,8 @@ class DiurnalExtrema(object):
                 options = 'min', 'max', 'both'
             find_between (tuple, floats or ints): find extrema value 
                 between first and last entry of tuple (format, hours after
-                index)
+                index) e.g., (12,23) will look for the local extrema between
+                noon and 12:00 on the day indicated.
         """
 
         if hasattr(self, 'diurnal_extrema_picks') is False:
@@ -761,11 +798,16 @@ def to_exact_indexing(window, timeseries):
     if not subset.empty and len(subset) > 2:
         idx = random.randint(1, len(subset)-1)
         time_between_data = subset.index[idx]-subset.index[idx-1]
-        window_res = str(time_between_data.components.minutes)+'T'
+        window_res = str(time_between_data.components.minutes)+'min'
         if time_between_data.components.minutes == 0:
             window_res = str(time_between_data.components.seconds)+'s'
-
-        exact_window = (start.ceil(window_res), end.floor(window_res))
+        if window_res=='0s':
+            exact_window = None
+        else:
+            # print(window_res)
+            # print(start.ceil(window_res))
+            # print(end.floor(window_res))
+            exact_window = (start.ceil(window_res), end.floor(window_res))
     else:
         exact_window = None
     return exact_window

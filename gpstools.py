@@ -127,7 +127,7 @@ class BaseStn:
                  ):
         self.site_pos = site_pos
         self.Lat, self.Long, self.ellipsoidal_height = geod_pos
-        self.Long = (360 - self.Long)*-1 if self.Long > 180 else self.Long
+        self.Long = (360 - self.Long) * -1 if self.Long > 180 else self.Long
         self.geod_pos = (self.Lat, self.Long, self.ellipsoidal_height)
         self.X, self.Y, self.Z = site_pos
         self.name = name.upper()
@@ -137,7 +137,7 @@ class BaseStn:
         return 'Base Station Object'
 
     def __repr__(self):
-        return 'Base Station '+self.name
+        return 'Base Station ' + self.name
     
     def geoid_height(self):
         pass
@@ -281,7 +281,7 @@ class OnIce:
         
     def calc_dist(a,b):
         """distance between a and b"""
-        return sqrt(a**2+b**2)
+        return sqrt(a ** 2 + b ** 2)
     
     
     def reproject_to_flow_direction(self, alpha=None, update_instance=True, 
@@ -326,8 +326,8 @@ class OnIce:
         else:
             t0 = self.determine_start()
             # calc xflow and xtran as dist from starting position at time t0
-            dnorth = self.dnorth - self.dnorth.dropna()[t0]
-            deast =  self.deast - self.deast.dropna()[t0]
+            dnorth = self.dnorth - self.dnorth.dropna().iloc[t0]
+            deast =  self.deast - self.deast.dropna().iloc[t0]
             # self.horizontal_disp = self.calc_dist(dnorth,deast)
 
         
@@ -346,17 +346,24 @@ class OnIce:
         return xflow, xtran
     
     def flow_direction_angle(self):
-        """calculate alpha from first and last positions"""
+        """calculate flow angle alpha from first and last positions in timeseries
+        
+        returns
+        -------
+           alpha : float
+           flow direction angle in degrees
+        """
         dnorth_daily = self.dnorth.resample('1D').mean().dropna()
         deast_daily = self.deast.resample('1D').mean().dropna()
         
-        alpha = atan((dnorth_daily[-1] - dnorth_daily[0])
-                            / (deast_daily[-1] - deast_daily[0]))
+        alpha = atan((dnorth_daily.iloc[-1] - dnorth_daily.iloc[0])
+                            / (deast_daily.iloc[-1] - deast_daily.iloc[0]))
         
         return alpha
         
 
     def determine_start(self):
+        """find the index for the start, ignoring spurrious measurements"""
         idx=0
         for i in range(100):
             diff=self.data.index[idx+1]-self.data.index[idx]
@@ -496,7 +503,7 @@ class OnIce:
         return detrended
 
     def z_detrend_wrt_xflow(self,
-                            window: tuple,
+                            window=None,
                             gen_figure=False):
         """Detrend vertical position data in the along-flow direction.
 
@@ -509,7 +516,8 @@ class OnIce:
         """
         df = pd.DataFrame({'z': self.z, 'xflow': self.xflow,
                            'timestamp': self.z.index})
-        df = clip_to_window(df, window, col_name='z')
+        if window is not None:
+            df = clip_to_window(df, window, col_name='z')
         # switch index to along flow direction (will be detrended wrt index)
         df = df.set_index('xflow')
         
@@ -523,8 +531,8 @@ class OnIce:
 
     def calc_velocity(self,
                       component: str,
-                      stat_window='3T',
-                      separation_window='2H',
+                      stat_window='3min',
+                      separation_window='2h',
                       smoothing: Optional[str] = None,
                       set_min_periods: Optional[Union[int, None]] = None,
                       window: Optional[WindowTypes] = None,
@@ -611,8 +619,12 @@ class OnIce:
     #                        stat_window,
     #                        separation_window,
     #                        window):
-    #     header = ''
+    #     header = 
+    # ''
     # pass
+
+
+
 
     def _name_file(self, DAT: str, FLAG: str, ext='.csv') -> str:
         """generates file name in the format CODEYY_DAT_FLAG.ext
