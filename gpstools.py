@@ -326,8 +326,8 @@ class OnIce:
         else:
             t0 = self.determine_start()
             # calc xflow and xtran as dist from starting position at time t0
-            dnorth = self.dnorth - self.dnorth.dropna()[t0]
-            deast =  self.deast - self.deast.dropna()[t0]
+            dnorth = self.dnorth - self.dnorth.dropna().iloc[t0]
+            deast =  self.deast - self.deast.dropna().iloc[t0]
             # self.horizontal_disp = self.calc_dist(dnorth,deast)
 
         
@@ -346,17 +346,24 @@ class OnIce:
         return xflow, xtran
     
     def flow_direction_angle(self):
-        """calculate alpha from first and last positions"""
+        """calculate flow angle alpha from first and last positions in timeseries
+        
+        returns
+        -------
+           alpha : float
+           flow direction angle in degrees
+        """
         dnorth_daily = self.dnorth.resample('1D').mean().dropna()
         deast_daily = self.deast.resample('1D').mean().dropna()
         
-        alpha = atan((dnorth_daily[-1] - dnorth_daily[0])
-                            / (deast_daily[-1] - deast_daily[0]))
+        alpha = atan((dnorth_daily.iloc[-1] - dnorth_daily.iloc[0])
+                            / (deast_daily.iloc[-1] - deast_daily.iloc[0]))
         
         return alpha
         
 
     def determine_start(self):
+        """find the index for the start, ignoring spurrious measurements"""
         idx=0
         for i in range(100):
             diff=self.data.index[idx+1]-self.data.index[idx]
